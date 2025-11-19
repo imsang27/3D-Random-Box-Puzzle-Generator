@@ -38,19 +38,36 @@ class Box:
             return axes[0]
         return 'tie'
 
+def _choose_axis(axis_weights: Tuple[float, float, float]) -> str:
+    """
+    axis_weights: (wx, wy, wz)
+    가중치에 따라 x / y / z 중 하나를 선택.
+    """
+    wx, wy, wz = axis_weights
+    axes = ["x", "y", "z"]
+    weights = [max(wx, 0.0), max(wy, 0.0), max(wz, 0.0)]
+
+    # 모든 가중치가 0이면 기본값으로 균등 분포
+    if weights[0] == 0 and weights[1] == 0 and weights[2] == 0:
+        weights = [1.0, 1.0, 1.0]
+
+    return random.choices(axes, weights=weights, k=1)[0]
+
 def _random_cut(
     box: Box,
     min_size: int,
     shape_keys: Set[Tuple[int, int, int]],
+    axis_weights: Tuple[float, float, float],
     max_retry: int = 20,
 ) -> Tuple[Box, Box] | Tuple[None, None]:
     """
     box 하나를 x/y/z 중 한 축 기준으로 잘라서 두 조각을 만든다.
+    - 어떤 축을 고를지는 axis_weights (wx, wy, wz)를 따른다.
     - 각 조각의 size_key가 기존 shape_keys에 있으면 그 시도는 버린다.
     - max_retry 동안 유효한 컷을 못 만들면 (None, None)을 반환.
     """
     for _ in range(max_retry):
-        axis = random.choice(["x", "y", "z"])
+        axis = _choose_axis(axis_weights)
 
         if axis == "x" and box.w > 2 * min_size:
             cut = random.randint(min_size, box.w - min_size)
@@ -91,6 +108,7 @@ def generate_pieces(
     target_count: int,
     min_size: int = 1,
     max_global_retry: int = 5000,
+    axis_weights: Tuple[float, float, float] = (1.0, 1.0, 0.3),
 ) -> List[Box]:
     """
     W×H×D 박스를 합동 없는 직육면체 조각들로 랜덤 분할한다.
@@ -98,6 +116,10 @@ def generate_pieces(
     - target_count: 만들고 싶은 조각 개수 (정확히 도달 못할 수도 있음)
     - min_size: 각 축의 최소 길이
     - max_global_retry: 전체 시도 제한 (무한루프 방지용)
+    - axis_weights: (wx, wy, wz)
+        * 기본값 (1.0, 1.0, 0.3) : z축으로 자르는 비중을 줄여서
+          위/아래로 층층이 쌓인 기둥 느낌을 약하게 만든다.
+        * 예) z축 컷을 완전히 막고 싶으면 (1.0, 1.0, 0.0)
     """
     pieces: List[Box] = [Box(0, 0, 0, W, H, D)]
     shape_keys: Set[Tuple[int, int, int]] = {pieces[0].size_key()}
@@ -109,7 +131,7 @@ def generate_pieces(
         base_idx = random.randrange(len(pieces))
         base = pieces[base_idx]
 
-        b1, b2 = _random_cut(base, min_size, shape_keys)
+        b1, b2 = _random_cut(base, min_size, shape_keys, axis_weights)
         if b1 is None:
             # 이 조각은 더 이상 의미 있게 자르기 힘든 상태
             continue
@@ -130,11 +152,9 @@ def check_volume(pieces: List[Box], W: int, H: int, D: int) -> tuple[bool, int, 
 
 if __name__ == "__main__":
     # 간단한 테스트 실행용
-    W, H, D = 10, 8, 6
-    target_count = 12
-    min_size = 1
+    from config import W, H, D, target_count, min_size, axis_weights
 
-    pieces = generate_pieces(W, H, D, target_count, min_size)
+    pieces = generate_pieces(W, H, D, target_count, min_size, axis_weights=axis_weights)
 
     ok, total, box_vol = check_volume(pieces, W, H, D)
     print(f"volume_ok={ok}, total_vol={total}, box_vol={box_vol}")
