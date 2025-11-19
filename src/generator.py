@@ -1,5 +1,3 @@
-# src/generator.py
-
 import random
 from dataclasses import dataclass
 from typing import List, Tuple, Set
